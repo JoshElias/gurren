@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/JoshElias/gurren/internal/config"
+	"github.com/moby/moby/pkg/namesgenerator"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -30,6 +31,7 @@ type ManagedTunnel struct {
 	Config    config.TunnelConfig
 	Status    State
 	Error     string
+	Ephemeral bool // true for ad-hoc tunnels created via CLI flags
 	cancel    context.CancelFunc
 	startedAt time.Time
 }
@@ -151,24 +153,41 @@ func (m *Manager) Start(name string, authMethods []ssh.AuthMethod, sshHost, sshU
 	return nil
 }
 
-// Stop stops a running tunnel by name
+// Stop stops a running tunnel by name.
+// If the tunnel is ephemeral, it will be removed after stopping.
 func (m *Manager) Stop(name string) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	mt, exists := m.tunnels[name]
 	if !exists {
+		m.mu.Unlock()
 		return fmt.Errorf("tunnel %q not found", name)
 	}
 
 	if !mt.Status.IsActive() {
+		m.mu.Unlock()
 		return fmt.Errorf("tunnel %q is not running", name)
 	}
 
+	isEphemeral := mt.Ephemeral
 	if mt.cancel != nil {
 		mt.cancel()
 	}
 
+	// If ephemeral, remove after a short delay to allow status update
+	if isEphemeral {
+		go func() {
+			time.Sleep(200 * time.Millisecond)
+			m.mu.Lock()
+			defer m.mu.Unlock()
+			// Only delete if still disconnected
+			if mt, exists := m.tunnels[name]; exists && !mt.Status.IsActive() {
+				delete(m.tunnels, name)
+			}
+		}()
+	}
+
+	m.mu.Unlock()
 	return nil
 }
 
@@ -196,6 +215,7 @@ func (m *Manager) List() []ManagedTunnel {
 			Config:    mt.Config,
 			Status:    mt.Status,
 			Error:     mt.Error,
+			Ephemeral: mt.Ephemeral,
 			startedAt: mt.startedAt,
 		})
 	}
@@ -226,4 +246,57 @@ func (m *Manager) GetConfig(name string) *config.TunnelConfig {
 	}
 
 	return &mt.Config
+}
+
+// Register adds an ad-hoc tunnel to the manager with a generated name.
+// Returns the generated name.
+func (m *Manager) Register(tc config.TunnelConfig) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Generate a unique name
+	var name string
+	for i := 0; i < 10; i++ {
+		name = namesgenerator.GetRandomName(0)
+		if _, exists := m.tunnels[name]; !exists {
+			break
+		}
+	}
+
+	// Final check - if still exists, add a suffix
+	if _, exists := m.tunnels[name]; exists {
+		return "", fmt.Errorf("failed to generate unique name")
+	}
+
+	tc.Name = name
+	m.tunnels[name] = &ManagedTunnel{
+		Config:    tc,
+		Status:    StateDisconnected,
+		Ephemeral: true,
+	}
+
+	return name, nil
+}
+
+// Unregister removes an ephemeral tunnel from the manager.
+// Only ephemeral tunnels can be unregistered.
+func (m *Manager) Unregister(name string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	mt, exists := m.tunnels[name]
+	if !exists {
+		return fmt.Errorf("tunnel %q not found", name)
+	}
+
+	if !mt.Ephemeral {
+		return fmt.Errorf("tunnel %q is not ephemeral", name)
+	}
+
+	if mt.Status.IsActive() {
+		return fmt.Errorf("tunnel %q is still active", name)
+	}
+
+	delete(m.tunnels, name)
+	return nil
 }

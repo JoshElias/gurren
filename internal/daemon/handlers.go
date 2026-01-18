@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/JoshElias/gurren/internal/auth"
+	"github.com/JoshElias/gurren/internal/config"
 )
 
 // handleSubscribe adds the client to the subscribers list
@@ -28,8 +29,11 @@ func (d *Daemon) handleTunnelStart(req *Request) Response {
 		return NewError(req.ID, ErrCodeInvalidParams, "name is required")
 	}
 
-	// Get tunnel config
-	tunnelCfg := d.config.GetTunnelByName(params.Name)
+	// Get tunnel config - first check manager (includes ephemeral), then config file
+	tunnelCfg := d.manager.GetConfig(params.Name)
+	if tunnelCfg == nil {
+		tunnelCfg = d.config.GetTunnelByName(params.Name)
+	}
 	if tunnelCfg == nil {
 		return NewError(req.ID, ErrCodeTunnelNotFound, fmt.Sprintf("tunnel %q not found", params.Name))
 	}
@@ -115,14 +119,40 @@ func (d *Daemon) handleTunnelList(req *Request) Response {
 	tunnels := make([]TunnelInfo, len(managed))
 	for i, mt := range managed {
 		tunnels[i] = TunnelInfo{
-			Name:   mt.Config.Name,
-			Status: mt.Status,
-			Error:  mt.Error,
-			Config: mt.Config,
+			Name:      mt.Config.Name,
+			Status:    mt.Status,
+			Error:     mt.Error,
+			Ephemeral: mt.Ephemeral,
+			Config:    mt.Config,
 		}
 	}
 
 	return NewResult(req.ID, TunnelListResult{Tunnels: tunnels})
+}
+
+// handleTunnelRegister registers an ad-hoc tunnel with a generated name
+func (d *Daemon) handleTunnelRegister(req *Request) Response {
+	var params TunnelRegisterParams
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return NewError(req.ID, ErrCodeInvalidParams, "invalid params")
+	}
+
+	if params.Host == "" || params.Remote == "" || params.Local == "" {
+		return NewError(req.ID, ErrCodeInvalidParams, "host, remote, and local are required")
+	}
+
+	cfg := config.TunnelConfig{
+		Host:   params.Host,
+		Remote: params.Remote,
+		Local:  params.Local,
+	}
+
+	name, err := d.manager.Register(cfg)
+	if err != nil {
+		return NewError(req.ID, ErrCodeInternal, err.Error())
+	}
+
+	return NewResult(req.ID, TunnelRegisterResult{Name: name})
 }
 
 // handlePing returns the daemon version

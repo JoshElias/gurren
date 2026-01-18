@@ -2,21 +2,17 @@
 package cmd
 
 import (
-	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
-	"github.com/JoshElias/gurren/internal/auth"
-	"github.com/JoshElias/gurren/internal/config"
 	"github.com/JoshElias/gurren/internal/daemon"
 	"github.com/JoshElias/gurren/internal/tui"
-	"github.com/JoshElias/gurren/internal/tunnel"
 	"github.com/spf13/cobra"
 )
 
@@ -61,21 +57,27 @@ func Execute() error {
 }
 
 func runConnect(cmd *cobra.Command, args []string) {
-	cfg, err := config.Load()
-	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+	// Ensure daemon is running
+	if !daemon.IsRunning() {
+		if err := startDaemonBackground(); err != nil {
+			log.Fatalf("Failed to start daemon: %v", err)
+		}
 	}
 
-	var tunnelCfg *config.TunnelConfig
+	// Connect to daemon
+	client, err := daemon.Connect()
+	if err != nil {
+		log.Fatalf("Failed to connect to daemon: %v", err)
+	}
+	defer client.Close()
 
-	// If tunnel name provided, look it up
+	var tunnelName string
+
+	// If tunnel name provided, use it directly
 	if len(args) > 0 {
-		tunnelCfg = cfg.GetTunnelByName(args[0])
-		if tunnelCfg == nil {
-			log.Fatalf("Tunnel %q not found. Available tunnels: %v", args[0], cfg.TunnelNames())
-		}
+		tunnelName = args[0]
 	} else {
-		// Build tunnel config from flags
+		// Ad-hoc tunnel from flags - register it first
 		host, _ := cmd.Flags().GetString("host")
 		remote, _ := cmd.Flags().GetString("remote")
 		local, _ := cmd.Flags().GetString("local")
@@ -84,66 +86,80 @@ func runConnect(cmd *cobra.Command, args []string) {
 			log.Fatal("When not using a named tunnel, --host, --remote, and --local are required")
 		}
 
-		tunnelCfg = &config.TunnelConfig{
-			Host:   host,
-			Remote: remote,
-			Local:  local,
+		result, err := client.TunnelRegister(host, remote, local)
+		if err != nil {
+			log.Fatalf("Failed to register tunnel: %v", err)
+		}
+		tunnelName = result.Name
+		fmt.Printf("Registered ad-hoc tunnel: %s\n", tunnelName)
+	}
+
+	// Start the tunnel
+	_, err = client.TunnelStart(tunnelName)
+	if err != nil {
+		log.Fatalf("Failed to start tunnel: %v", err)
+	}
+
+	// Get tunnel details for display
+	tunnelList, err := client.TunnelList()
+	if err != nil {
+		log.Printf("Warning: couldn't fetch tunnel details: %v", err)
+	} else {
+		for _, t := range tunnelList.Tunnels {
+			if t.Name == tunnelName {
+				fmt.Printf("Tunnel %q connected.\n", tunnelName)
+				fmt.Printf("  %s -> %s (via %s)\n", t.Config.Local, t.Config.Remote, t.Config.Host)
+				break
+			}
 		}
 	}
 
-	// Determine auth method
-	method := authMethod
-	if method == "" {
-		method = cfg.Auth.Method
-	}
-	if method == "" {
-		method = "auto"
+	fmt.Println("Press Ctrl+C to disconnect.")
+
+	// Subscribe to notifications to detect if tunnel is stopped elsewhere
+	if err := client.Subscribe(); err != nil {
+		log.Printf("Warning: couldn't subscribe to notifications: %v", err)
 	}
 
-	// Get auth methods
-	authMethods, err := auth.GetAuthMethodsByName(method)
-	if err != nil {
-		log.Fatalf("Failed to get auth methods: %v", err)
+	// Wait for either:
+	// 1. Interrupt signal (user pressed Ctrl+C)
+	// 2. Tunnel disconnected notification (stopped from TUI or another CLI)
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	disconnectedByRemote := false
+
+	// Listen for notifications in background
+	doneCh := make(chan struct{})
+	go func() {
+		for notif := range client.Notifications() {
+			if notif.Method == daemon.MethodStatusChanged {
+				var params daemon.StatusChangedParams
+				if err := json.Unmarshal(notif.Params, &params); err == nil {
+					if params.Name == tunnelName && !params.Status.IsActive() {
+						disconnectedByRemote = true
+						close(doneCh)
+						return
+					}
+				}
+			}
+		}
+	}()
+
+	// Wait for signal or remote disconnect
+	select {
+	case <-sigCh:
+		fmt.Println("\nDisconnecting...")
+		if err := client.TunnelStop(tunnelName); err != nil {
+			log.Printf("Warning: failed to stop tunnel: %v", err)
+		}
+	case <-doneCh:
+		fmt.Println("\nTunnel disconnected.")
 	}
 
-	// Parse SSH host
-	sshHost, sshUser := parseHost(tunnelCfg.Host)
-
-	// Start tunnel
-	t := &tunnel.Tunnel{
-		SSHHost:    sshHost,
-		SSHUser:    sshUser,
-		RemoteAddr: tunnelCfg.Remote,
-		LocalAddr:  tunnelCfg.Local,
+	if !disconnectedByRemote {
+		fmt.Printf("Tunnel %q disconnected.\n", tunnelName)
 	}
-
-	// Set up signal handling for graceful shutdown
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
-	if err := tunnel.Start(ctx, t, authMethods); err != nil && err != tunnel.ErrTunnelClosed {
-		log.Fatalf("Tunnel error: %v", err)
-	}
-}
-
-// parseHost parses a host string like "user@host:port" or "host"
-// Returns (host:port, user)
-func parseHost(host string) (string, string) {
-	user := ""
-	addr := host
-
-	// Extract user if present
-	if idx := strings.Index(host, "@"); idx != -1 {
-		user = host[:idx]
-		addr = host[idx+1:]
-	}
-
-	// Add default port if not present
-	if !strings.Contains(addr, ":") {
-		addr = addr + ":22"
-	}
-
-	return addr, user
 }
 
 // Silence usage output

@@ -14,6 +14,7 @@ const (
 	MethodTunnelStop     = "tunnel.stop"
 	MethodTunnelStatus   = "tunnel.status"
 	MethodTunnelList     = "tunnel.list"
+	MethodTunnelRegister = "tunnel.register"
 	MethodDaemonPing     = "daemon.ping"
 	MethodDaemonShutdown = "daemon.shutdown"
 	MethodSubscribe      = "subscribe"
@@ -76,6 +77,18 @@ type TunnelStatusParams struct {
 	Name string `json:"name"`
 }
 
+// TunnelRegisterParams are parameters for tunnel.register (ad-hoc tunnels)
+type TunnelRegisterParams struct {
+	Host   string `json:"host"`   // SSH host (user@host:port)
+	Remote string `json:"remote"` // Remote address (host:port)
+	Local  string `json:"local"`  // Local bind address (host:port)
+}
+
+// TunnelRegisterResult is the result of tunnel.register
+type TunnelRegisterResult struct {
+	Name string `json:"name"` // Generated name for the tunnel
+}
+
 // --- Response Results ---
 
 // TunnelStatusResult is the result of tunnel.status
@@ -87,10 +100,11 @@ type TunnelStatusResult struct {
 
 // TunnelInfo represents a tunnel in the list response
 type TunnelInfo struct {
-	Name   string              `json:"name"`
-	Status tunnel.State        `json:"status"`
-	Error  string              `json:"error,omitempty"`
-	Config config.TunnelConfig `json:"config"`
+	Name      string              `json:"name"`
+	Status    tunnel.State        `json:"status"`
+	Error     string              `json:"error,omitempty"`
+	Ephemeral bool                `json:"ephemeral"`
+	Config    config.TunnelConfig `json:"config"`
 }
 
 // TunnelListResult is the result of tunnel.list

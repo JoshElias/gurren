@@ -4,13 +4,17 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/JoshElias/gurren/internal/config"
 	"github.com/JoshElias/gurren/internal/daemon"
 	"github.com/spf13/cobra"
 )
+
+var daemonForeground bool
 
 var daemonCmd = &cobra.Command{
 	Use:   "daemon",
@@ -21,7 +25,7 @@ var daemonCmd = &cobra.Command{
 var daemonStartCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start the daemon",
-	Long:  `Starts the daemon in the foreground. Use & to run in background.`,
+	Long:  `Starts the daemon in the background to manage SSH tunnels.`,
 	Run:   runDaemonStart,
 }
 
@@ -40,6 +44,7 @@ var daemonStatusCmd = &cobra.Command{
 }
 
 func init() {
+	daemonStartCmd.Flags().BoolVar(&daemonForeground, "foreground", false, "Run daemon in foreground (don't detach)")
 	daemonCmd.AddCommand(daemonStartCmd)
 	daemonCmd.AddCommand(daemonStopCmd)
 	daemonCmd.AddCommand(daemonStatusCmd)
@@ -49,23 +54,29 @@ func init() {
 func runDaemonStart(cmd *cobra.Command, args []string) {
 	// Check if already running
 	if daemon.IsRunning() {
-		fmt.Println("Gurren daemon is already running")
-		os.Exit(1)
+		fmt.Println("Daemon is already running")
+		return
 	}
 
-	// Load config
+	// If not foreground mode, fork to background
+	if !daemonForeground {
+		if err := startDaemonInBackground(); err != nil {
+			log.Fatalf("Failed to start daemon: %v", err)
+		}
+		fmt.Println("Daemon started")
+		return
+	}
+
+	// Foreground mode - run daemon in this process
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("Error loading config: %v", err)
 	}
 
-	// Create and start daemon
 	d := daemon.New(cfg)
 	if err := d.Start(); err != nil {
-		log.Fatalf("Error starting Gurren daemon: %v", err)
+		log.Fatalf("Error starting daemon: %v", err)
 	}
-
-	fmt.Println("Gurren daemon started")
 
 	// Wait for interrupt signal
 	sigCh := make(chan os.Signal, 1)
@@ -74,6 +85,36 @@ func runDaemonStart(cmd *cobra.Command, args []string) {
 	<-sigCh
 	fmt.Println("\nShutting down...")
 	d.Shutdown()
+}
+
+// startDaemonInBackground starts the daemon as a detached background process
+func startDaemonInBackground() error {
+	exePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get executable path: %w", err)
+	}
+
+	cmd := exec.Command(exePath, "daemon", "start", "--foreground")
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	cmd.Stdin = nil
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setsid: true,
+	}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start daemon: %w", err)
+	}
+
+	// Wait for daemon to be ready
+	for i := 0; i < 20; i++ {
+		time.Sleep(100 * time.Millisecond)
+		if daemon.IsRunning() {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("daemon did not start in time")
 }
 
 func runDaemonStop(cmd *cobra.Command, args []string) {

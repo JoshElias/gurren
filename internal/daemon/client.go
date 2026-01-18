@@ -245,6 +245,27 @@ func (c *Client) TunnelList() (*TunnelListResult, error) {
 	return &result, nil
 }
 
+// TunnelRegister registers an ad-hoc tunnel and returns its generated name
+func (c *Client) TunnelRegister(host, remote, local string) (*TunnelRegisterResult, error) {
+	resp, err := c.call(MethodTunnelRegister, TunnelRegisterParams{
+		Host:   host,
+		Remote: remote,
+		Local:  local,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("%s", resp.Error.Message)
+	}
+
+	var result TunnelRegisterResult
+	if err := json.Unmarshal(resp.Result, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse result: %w", err)
+	}
+	return &result, nil
+}
+
 // Shutdown tells the daemon to shut down
 func (c *Client) Shutdown() error {
 	resp, err := c.call(MethodDaemonShutdown, nil)

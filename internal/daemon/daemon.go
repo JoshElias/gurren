@@ -184,6 +184,8 @@ func (d *Daemon) handleRequest(sub *subscriber, req *Request) Response {
 		return d.handleTunnelStatus(req)
 	case MethodTunnelList:
 		return d.handleTunnelList(req)
+	case MethodTunnelRegister:
+		return d.handleTunnelRegister(req)
 	case MethodDaemonPing:
 		return d.handlePing(req)
 	case MethodDaemonShutdown:

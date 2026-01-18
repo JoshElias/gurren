@@ -15,11 +15,12 @@ import (
 
 // TunnelItem represents a tunnel in the list
 type TunnelItem struct {
-	Name   string
-	Status tunnel.State
-	Error  string
-	Local  string
-	Remote string
+	Name      string
+	Status    tunnel.State
+	Error     string
+	Ephemeral bool
+	Local     string
+	Remote    string
 }
 
 // Model is the main TUI model
@@ -83,11 +84,12 @@ func (m Model) loadTunnels() tea.Cmd {
 		tunnels := make([]TunnelItem, len(result.Tunnels))
 		for i, t := range result.Tunnels {
 			tunnels[i] = TunnelItem{
-				Name:   t.Name,
-				Status: t.Status,
-				Error:  t.Error,
-				Local:  t.Config.Local,
-				Remote: t.Config.Remote,
+				Name:      t.Name,
+				Status:    t.Status,
+				Error:     t.Error,
+				Ephemeral: t.Ephemeral,
+				Local:     t.Config.Local,
+				Remote:    t.Config.Remote,
 			}
 		}
 
