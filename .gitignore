@@ -4,6 +4,7 @@
 *.dll
 *.so
 *.dylib
+gurren
 
 # Test binary
 *.test
