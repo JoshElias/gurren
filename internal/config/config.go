@@ -1,3 +1,4 @@
+// Package config combines input from env vars, config files and cli args
 package config
 
 import (
@@ -80,9 +81,9 @@ func Load() (*Config, error) {
 	return &cfg, nil
 }
 
-// GetTunnel returns the tunnel config by name.
+// GetTunnelByName returns the tunnel config by name.
 // Returns nil if not found.
-func (c *Config) GetTunnel(name string) *TunnelConfig {
+func (c *Config) GetTunnelByName(name string) *TunnelConfig {
 	for i := range c.Tunnels {
 		if c.Tunnels[i].Name == name {
 			return &c.Tunnels[i]

@@ -2,13 +2,19 @@
 package tunnel
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net"
+	"sync"
 
 	"golang.org/x/crypto/ssh"
 )
+
+// ErrTunnelClosed is returned when the tunnel is closed via context cancellation
+var ErrTunnelClosed = errors.New("tunnel closed")
 
 // Tunnel represents an SSH tunnel configuration.
 type Tunnel struct {
@@ -19,8 +25,8 @@ type Tunnel struct {
 }
 
 // Start establishes the SSH tunnel and listens for local connections.
-// This function blocks until the tunnel is closed or an error occurs.
-func Start(t *Tunnel, authMethods []ssh.AuthMethod) error {
+// This function blocks until the context is cancelled or an error occurs.
+func Start(ctx context.Context, t *Tunnel, authMethods []ssh.AuthMethod) error {
 	config := &ssh.ClientConfig{
 		User:            t.SSHUser,
 		Auth:            authMethods,
@@ -41,7 +47,8 @@ func Start(t *Tunnel, authMethods []ssh.AuthMethod) error {
 	log.Printf("Connected to %s", t.SSHHost)
 
 	// Start local listener
-	listener, err := net.Listen("tcp", t.LocalAddr)
+	lc := net.ListenConfig{}
+	listener, err := lc.Listen(ctx, "tcp", t.LocalAddr)
 	if err != nil {
 		return fmt.Errorf("unable to listen on %s: %w", t.LocalAddr, err)
 	}
@@ -53,19 +60,40 @@ func Start(t *Tunnel, authMethods []ssh.AuthMethod) error {
 
 	log.Printf("Tunnel active: %s -> %s (via %s)", t.LocalAddr, t.RemoteAddr, t.SSHHost)
 
+	// Track active connections for graceful shutdown
+	var wg sync.WaitGroup
+	connCtx, connCancel := context.WithCancel(ctx)
+	defer connCancel()
+
+	// Handle context cancellation
+	go func() {
+		<-ctx.Done()
+		_ = listener.Close()
+	}()
+
 	// Accept connections
 	for {
 		localConn, err := listener.Accept()
 		if err != nil {
+			// Check if we're shutting down
+			if ctx.Err() != nil {
+				// Wait for active connections to finish
+				wg.Wait()
+				return ErrTunnelClosed
+			}
 			log.Printf("Failed to accept connection: %v", err)
 			continue
 		}
 
-		go handleConnection(sshClient, localConn, t.RemoteAddr)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			handleConnection(connCtx, sshClient, localConn, t.RemoteAddr)
+		}()
 	}
 }
 
-func handleConnection(sshClient *ssh.Client, localConn net.Conn, remoteAddr string) {
+func handleConnection(ctx context.Context, sshClient *ssh.Client, localConn net.Conn, remoteAddr string) {
 	defer func() {
 		if err := localConn.Close(); err != nil {
 			log.Printf("Warning: error closing local connection: %v", err)
@@ -89,7 +117,7 @@ func handleConnection(sshClient *ssh.Client, localConn net.Conn, remoteAddr stri
 
 	go func() {
 		_, err := io.Copy(remoteConn, localConn)
-		if err != nil {
+		if err != nil && ctx.Err() == nil {
 			log.Printf("Error copying to remote: %v", err)
 		}
 		done <- struct{}{}
@@ -97,11 +125,19 @@ func handleConnection(sshClient *ssh.Client, localConn net.Conn, remoteAddr stri
 
 	go func() {
 		_, err := io.Copy(localConn, remoteConn)
-		if err != nil {
+		if err != nil && ctx.Err() == nil {
 			log.Printf("Error copying from remote: %v", err)
 		}
 		done <- struct{}{}
 	}()
 
-	<-done // Wait for one side to close
+	// Wait for one side to close or context cancellation
+	select {
+	case <-done:
+	case <-ctx.Done():
+		// Force close connections to unblock io.Copy
+		_ = localConn.Close()
+		_ = remoteConn.Close()
+		<-done
+	}
 }

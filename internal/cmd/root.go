@@ -2,12 +2,20 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"os"
+	"os/exec"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/JoshElias/gurren/internal/auth"
 	"github.com/JoshElias/gurren/internal/config"
+	"github.com/JoshElias/gurren/internal/daemon"
+	"github.com/JoshElias/gurren/internal/tui"
 	"github.com/JoshElias/gurren/internal/tunnel"
 	"github.com/spf13/cobra"
 )
@@ -21,6 +29,7 @@ var rootCmd = &cobra.Command{
 	Use:   "gurren",
 	Short: "SSH tunnel manager",
 	Long:  `Gurren is an SSH tunnel manager CLI and TUI that simplifies connecting to remote services through bastion hosts.`,
+	Run:   runRoot,
 }
 
 var connectCmd = &cobra.Command{
@@ -61,7 +70,7 @@ func runConnect(cmd *cobra.Command, args []string) {
 
 	// If tunnel name provided, look it up
 	if len(args) > 0 {
-		tunnelCfg = cfg.GetTunnel(args[0])
+		tunnelCfg = cfg.GetTunnelByName(args[0])
 		if tunnelCfg == nil {
 			log.Fatalf("Tunnel %q not found. Available tunnels: %v", args[0], cfg.TunnelNames())
 		}
@@ -86,7 +95,6 @@ func runConnect(cmd *cobra.Command, args []string) {
 	method := authMethod
 	if method == "" {
 		method = cfg.Auth.Method
-		fmt.Printf("Auth method that came from config: %v", method)
 	}
 	if method == "" {
 		method = "auto"
@@ -109,7 +117,11 @@ func runConnect(cmd *cobra.Command, args []string) {
 		LocalAddr:  tunnelCfg.Local,
 	}
 
-	if err := tunnel.Start(t, authMethods); err != nil {
+	// Set up signal handling for graceful shutdown
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	if err := tunnel.Start(ctx, t, authMethods); err != nil && err != tunnel.ErrTunnelClosed {
 		log.Fatalf("Tunnel error: %v", err)
 	}
 }
@@ -137,4 +149,62 @@ func parseHost(host string) (string, string) {
 // Silence usage output
 func init() {
 	rootCmd.SilenceUsage = true
+}
+
+// runRoot launches the TUI when no subcommand is specified
+func runRoot(cmd *cobra.Command, args []string) {
+	// Ensure daemon is running
+	if !daemon.IsRunning() {
+		// Start daemon in background
+		if err := startDaemonBackground(); err != nil {
+			log.Fatalf("Failed to start daemon: %v", err)
+		}
+	}
+
+	// Connect to daemon
+	client, err := daemon.Connect()
+	if err != nil {
+		log.Fatalf("Failed to connect to daemon: %v", err)
+	}
+	defer client.Close()
+
+	// Run TUI
+	if err := tui.Run(client); err != nil {
+		log.Fatalf("TUI error: %v", err)
+	}
+}
+
+// startDaemonBackground starts the daemon as a background process
+func startDaemonBackground() error {
+	// Get the path to our own executable
+	exePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get executable path: %w", err)
+	}
+
+	// Start daemon in background
+	cmd := exec.Command(exePath, "daemon", "start")
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	cmd.Stdin = nil
+
+	// Detach from parent process
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setsid: true,
+	}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start daemon: %w", err)
+	}
+
+	// Wait a bit for daemon to start
+	// Poll until daemon is running or timeout
+	for i := 0; i < 20; i++ {
+		time.Sleep(100 * time.Millisecond)
+		if daemon.IsRunning() {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("daemon did not start in time")
 }
