@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"fmt"
 	"net"
 	"os"
 
@@ -21,7 +20,6 @@ func (a *AgentAuthenticator) Priority() int {
 }
 
 func (a *AgentAuthenticator) IsAvailable() bool {
-	fmt.Println("Checking availability of the agent client")
 	socket := os.Getenv("SSH_AUTH_SOCK")
 	if socket == "" {
 		return false

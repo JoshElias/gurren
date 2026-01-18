@@ -46,9 +46,6 @@ func GetAvailableAuthMethods() ([]ssh.AuthMethod, error) {
 	sort.Slice(authenticators, func(a, b int) bool {
 		return authenticators[a].Priority() < authenticators[b].Priority()
 	})
-	for _, method := range authenticators {
-		fmt.Printf("authenticataaaa: %v\n", method.Name())
-	}
 
 	// Collect auth methods
 	var methods []ssh.AuthMethod
