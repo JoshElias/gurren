@@ -162,7 +162,7 @@ When `method = "auto"` (default), Gurren tries each method in priority order unt
 
 - [ ] Homebrew formula
 - [ ] AUR package
-- [ ] SSH config file (`~/.ssh/config`) parsing
+- [x] SSH config file (`~/.ssh/config`) parsing
 - [ ] Host key verification
 - [ ] Test coverage
 

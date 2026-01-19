@@ -7,6 +7,7 @@ import (
 
 	"github.com/JoshElias/gurren/internal/auth"
 	"github.com/JoshElias/gurren/internal/config"
+	"github.com/JoshElias/gurren/internal/sshconfig"
 )
 
 // handleSubscribe adds the client to the subscribers list
@@ -38,16 +39,15 @@ func (d *Daemon) handleTunnelStart(req *Request) Response {
 		return NewError(req.ID, ErrCodeTunnelNotFound, fmt.Sprintf("tunnel %q not found", params.Name))
 	}
 
-	// Get auth methods - for now, use non-interactive methods only
-	// In the future, we could support interactive auth via the TUI
+	// Parse SSH host - resolves aliases from ~/.ssh/config
+	sshHost, sshUser, identityFiles := parseHost(tunnelCfg.Host)
+
+	// Get auth methods - use identity files from SSH config if available
 	authMethod := d.config.Auth.Method
-	authMethods, err := auth.GetAuthMethodsByName(authMethod)
+	authMethods, err := auth.GetAuthMethodsWithIdentity(authMethod, identityFiles)
 	if err != nil {
 		return NewError(req.ID, ErrCodeAuthRequired, fmt.Sprintf("auth error: %v", err))
 	}
-
-	// Parse SSH host
-	sshHost, sshUser := parseHost(tunnelCfg.Host)
 
 	// Start the tunnel
 	if err := d.manager.Start(params.Name, authMethods, sshHost, sshUser); err != nil {
@@ -171,21 +171,32 @@ func (d *Daemon) handleShutdown(req *Request) Response {
 }
 
 // parseHost parses a host string like "user@host:port" or "host"
-// Returns (host:port, user)
-func parseHost(host string) (string, string) {
-	user := ""
-	addr := host
+// It first attempts to resolve the host from ~/.ssh/config, falling back
+// to manual parsing if not found in SSH config.
+// Returns (host:port, user, identityFiles)
+func parseHost(host string) (string, string, []string) {
+	// Check if host contains @ or : - if so, it's an explicit address, not an alias
+	// Parse it manually instead of looking up in SSH config
+	if strings.Contains(host, "@") || strings.Contains(host, ":") {
+		user := ""
+		addr := host
 
-	// Extract user if present
-	if u, a, ok := strings.Cut(host, "@"); ok {
-		user = u
-		addr = a
+		// Extract user if present
+		if u, a, ok := strings.Cut(host, "@"); ok {
+			user = u
+			addr = a
+		}
+
+		// Add default port if not present
+		if !strings.Contains(addr, ":") {
+			addr = addr + ":22"
+		}
+
+		return addr, user, nil
 	}
 
-	// Add default port if not present
-	if !strings.Contains(addr, ":") {
-		addr = addr + ":22"
-	}
+	// Try to resolve from SSH config
+	resolved := sshconfig.Resolve(host)
 
-	return addr, user
+	return resolved.Address(), resolved.User, resolved.IdentityFiles
 }

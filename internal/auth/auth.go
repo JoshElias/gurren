@@ -97,3 +97,41 @@ func getAuthMethodByName(method string) ([]ssh.AuthMethod, error) {
 	}
 	return nil, fmt.Errorf("unknown authentication method: %q", method)
 }
+
+// GetAuthMethodsWithIdentity returns SSH auth methods, using the provided identity files
+// from SSH config if available. Identity files take priority over default key locations.
+// If identityFiles is empty, falls back to default behavior.
+func GetAuthMethodsWithIdentity(method string, identityFiles []string) ([]ssh.AuthMethod, error) {
+	// If no identity files specified, use default behavior
+	if len(identityFiles) == 0 {
+		return GetAuthMethodsByName(method)
+	}
+
+	var methods []ssh.AuthMethod
+
+	// Always try SSH agent first (if available) - it may have the keys loaded
+	agent := &AgentAuthenticator{}
+	if agent.IsAvailable() {
+		if m, err := agent.GetAuthMethod(); err == nil {
+			methods = append(methods, m)
+		}
+	}
+
+	// Try each identity file from SSH config
+	for _, keyPath := range identityFiles {
+		pk := &PublicKeyAuthenticator{KeyPath: keyPath}
+		if pk.IsAvailable() {
+			if m, err := pk.GetAuthMethod(); err == nil {
+				methods = append(methods, m)
+			}
+		}
+	}
+
+	// If specific method requested and we have methods, return them
+	if len(methods) > 0 {
+		return methods, nil
+	}
+
+	// Fall back to default auth methods if SSH config identity files didn't work
+	return GetAuthMethodsByName(method)
+}
