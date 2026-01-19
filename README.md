@@ -11,6 +11,7 @@ A fast, terminal-based SSH tunnel manager with a TUI and background daemon.
 - **Background daemon** — Tunnels persist even after closing the TUI
 - **Vim-style navigation** — `j`/`k` to navigate, `Enter` to toggle
 - **Multiple auth methods** — SSH agent, public key, and password
+- **SSH config support** — Use hosts from `~/.ssh/config` directly
 - **Simple configuration** — TOML-based config file
 - **Real-time status** — Push-based status updates in the TUI
 
@@ -95,13 +96,30 @@ gurren connect my-database
 gurren disconnect my-database
 
 # Direct connection with flags (bypasses daemon)
+# --host accepts user@host:port or a Host from ~/.ssh/config
 gurren connect --host user@bastion:22 --remote db:5432 --local localhost:5432
+gurren connect --host my-ssh-host --remote db:5432 --local localhost:5432
 
 # Daemon management
 gurren daemon start    # Start daemon (foreground)
 gurren daemon stop     # Stop daemon and all tunnels
 gurren daemon status   # Check if daemon is running
+
+# Shell completion
+gurren completion bash       # Bash completion script
+gurren completion zsh        # Zsh completion script
+gurren completion fish       # Fish completion script
+gurren completion powershell # PowerShell completion script
 ```
+
+### Global Flags
+
+These flags work with any command:
+
+| Flag | Description |
+|------|-------------|
+| `--config <path>` | Config file path (default: `~/.config/gurren/config.toml`) |
+| `-a, --auth <method>` | Auth method: `auto`, `agent`, `publickey`, `password` (default: `auto`) |
 
 ## Configuration
 
@@ -140,6 +158,35 @@ Gurren supports three SSH authentication methods:
 | `password` | Interactive password prompt | 3 (last resort) |
 
 When `method = "auto"` (default), Gurren tries each method in priority order until one succeeds.
+
+## SSH Config Integration
+
+Gurren reads your `~/.ssh/config` file and can use any `Host` entry directly. This means you can reference hosts by their alias instead of specifying full connection details.
+
+For example, if your SSH config contains:
+
+```
+Host bastion
+    HostName bastion.example.com
+    User ec2-user
+    Port 22
+```
+
+You can connect using just the alias:
+
+```bash
+gurren connect --host bastion --remote db.internal:5432 --local localhost:5432
+```
+
+In your `config.toml`, you can also reference SSH config hosts:
+
+```toml
+[[tunnels]]
+name = "production-db"
+host = "bastion"  # Uses Host entry from ~/.ssh/config
+remote = "db.internal:5432"
+local = "localhost:5432"
+```
 
 ## Architecture
 
