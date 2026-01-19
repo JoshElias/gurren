@@ -7,6 +7,7 @@ type KeyMap struct {
 	Up     key.Binding
 	Down   key.Binding
 	Toggle key.Binding
+	Filter key.Binding
 	Quit   key.Binding
 }
 
@@ -15,15 +16,19 @@ func DefaultKeyMap() KeyMap {
 	return KeyMap{
 		Up: key.NewBinding(
 			key.WithKeys("k", "up"),
-			key.WithHelp("k/\u2191", "up"),
+			key.WithHelp("j/k", "navigate"),
 		),
 		Down: key.NewBinding(
 			key.WithKeys("j", "down"),
-			key.WithHelp("j/\u2193", "down"),
+			key.WithHelp("j/k", "navigate"),
 		),
 		Toggle: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("enter", "toggle"),
+		),
+		Filter: key.NewBinding(
+			key.WithKeys("/"),
+			key.WithHelp("/", "filter"),
 		),
 		Quit: key.NewBinding(
 			key.WithKeys("q", "ctrl+c"),
@@ -32,15 +37,16 @@ func DefaultKeyMap() KeyMap {
 	}
 }
 
-// ShortHelp returns the short help text
+// ShortHelp returns bindings shown in the mini help view
 func (k KeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.Toggle, k.Quit}
+	return []key.Binding{k.Up, k.Toggle, k.Filter, k.Quit}
 }
 
-// FullHelp returns the full help text
+// FullHelp returns bindings for the expanded help view (not used currently)
 func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down},
-		{k.Toggle, k.Quit},
+		{k.Toggle, k.Filter},
+		{k.Quit},
 	}
 }
