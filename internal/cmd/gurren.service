@@ -1,0 +1,12 @@
+[Unit]
+Description=Gurren SSH Tunnel Manager
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={{EXEC_PATH}} service start --foreground
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

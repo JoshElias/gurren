@@ -36,7 +36,7 @@ gurren/
 │   ├── config/             # Configuration loading (Viper)
 │   ├── auth/               # SSH authentication methods
 │   ├── tunnel/             # SSH tunnel management
-│   ├── daemon/             # Background daemon (IPC server)
+│   ├── daemon/             # Background service (IPC server)
 │   └── tui/                # Terminal UI (BubbleTea)
 ```
 
@@ -48,7 +48,7 @@ gurren/
 | `config` | TOML config parsing |
 | `auth` | SSH auth (agent, publickey, password) |
 | `tunnel` | SSH tunnel lifecycle, state management |
-| `daemon` | Background process, Unix socket IPC |
+| `daemon` | Background service, Unix socket IPC |
 | `tui` | BubbleTea-based terminal interface |
 
 ## Development
@@ -59,8 +59,8 @@ gurren/
 # Build and run TUI
 go build . && ./gurren
 
-# Run daemon in foreground (for debugging)
-./gurren daemon start
+# Run service in foreground (for debugging)
+./gurren service start --foreground
 
 # In another terminal
 ./gurren ls

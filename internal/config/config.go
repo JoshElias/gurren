@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -23,10 +24,20 @@ type AuthConfig struct {
 
 // TunnelConfig defines a tunnel to a remote endpoint via an SSH host.
 type TunnelConfig struct {
-	Name   string `mapstructure:"name"`   // Friendly name for the tunnel
+	Name   string `mapstructure:"name"`   // Friendly name for the tunnel (optional, derived from Host if omitted)
 	Host   string `mapstructure:"host"`   // SSH host (from ~/.ssh/config or hostname)
 	Remote string `mapstructure:"remote"` // Remote address (host:port)
 	Local  string `mapstructure:"local"`  // Local bind address (host:port)
+}
+
+// deriveName extracts a friendly name from a host string.
+// For "user@host:port" returns "host:port", for "bastion" returns "bastion".
+func deriveName(host string) string {
+	// Strip user@ prefix if present
+	if idx := strings.Index(host, "@"); idx != -1 {
+		host = host[idx+1:]
+	}
+	return host
 }
 
 // Load reads configuration from file and environment.
@@ -76,6 +87,25 @@ func Load() (*Config, error) {
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("error parsing config: %w", err)
+	}
+
+	// Derive names for tunnels that don't have one
+	for i := range cfg.Tunnels {
+		if cfg.Tunnels[i].Name == "" && cfg.Tunnels[i].Host != "" {
+			cfg.Tunnels[i].Name = deriveName(cfg.Tunnels[i].Host)
+		}
+	}
+
+	// Handle duplicate names by adding suffixes
+	nameCounts := make(map[string]int)
+	for i := range cfg.Tunnels {
+		name := cfg.Tunnels[i].Name
+		if count, exists := nameCounts[name]; exists {
+			cfg.Tunnels[i].Name = fmt.Sprintf("%s-%d", name, count+1)
+			nameCounts[name]++
+		} else {
+			nameCounts[name] = 1
+		}
 	}
 
 	return &cfg, nil

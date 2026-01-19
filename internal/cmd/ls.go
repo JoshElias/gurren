@@ -27,7 +27,7 @@ func init() {
 func runLs(cmd *cobra.Command, args []string) {
 	client, err := daemon.Connect()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: daemon not running. Start with 'gurren daemon start'\n")
+		fmt.Fprintf(os.Stderr, "Error: service not running. Start with 'gurren service start'\n")
 		os.Exit(1)
 	}
 	defer client.Close()

@@ -57,17 +57,17 @@ func Execute() error {
 }
 
 func runConnect(cmd *cobra.Command, args []string) {
-	// Ensure daemon is running
+	// Ensure service is running
 	if !daemon.IsRunning() {
-		if err := startDaemonBackground(); err != nil {
-			log.Fatalf("Failed to start daemon: %v", err)
+		if err := startServiceBackground(); err != nil {
+			log.Fatalf("Failed to start service: %v", err)
 		}
 	}
 
-	// Connect to daemon
+	// Connect to service
 	client, err := daemon.Connect()
 	if err != nil {
-		log.Fatalf("Failed to connect to daemon: %v", err)
+		log.Fatalf("Failed to connect to service: %v", err)
 	}
 	defer client.Close()
 
@@ -169,18 +169,18 @@ func init() {
 
 // runRoot launches the TUI when no subcommand is specified
 func runRoot(cmd *cobra.Command, args []string) {
-	// Ensure daemon is running
+	// Ensure service is running
 	if !daemon.IsRunning() {
-		// Start daemon in background
-		if err := startDaemonBackground(); err != nil {
-			log.Fatalf("Failed to start daemon: %v", err)
+		// Start service in background
+		if err := startServiceBackground(); err != nil {
+			log.Fatalf("Failed to start service: %v", err)
 		}
 	}
 
-	// Connect to daemon
+	// Connect to service
 	client, err := daemon.Connect()
 	if err != nil {
-		log.Fatalf("Failed to connect to daemon: %v", err)
+		log.Fatalf("Failed to connect to service: %v", err)
 	}
 	defer client.Close()
 
@@ -190,16 +190,16 @@ func runRoot(cmd *cobra.Command, args []string) {
 	}
 }
 
-// startDaemonBackground starts the daemon as a background process
-func startDaemonBackground() error {
+// startServiceBackground starts the service as a background process
+func startServiceBackground() error {
 	// Get the path to our own executable
 	exePath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("failed to get executable path: %w", err)
 	}
 
-	// Start daemon in background
-	cmd := exec.Command(exePath, "daemon", "start")
+	// Start service in background
+	cmd := exec.Command(exePath, "service", "start")
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	cmd.Stdin = nil
@@ -210,11 +210,11 @@ func startDaemonBackground() error {
 	}
 
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start daemon: %w", err)
+		return fmt.Errorf("failed to start service: %w", err)
 	}
 
-	// Wait a bit for daemon to start
-	// Poll until daemon is running or timeout
+	// Wait a bit for service to start
+	// Poll until service is running or timeout
 	for i := 0; i < 20; i++ {
 		time.Sleep(100 * time.Millisecond)
 		if daemon.IsRunning() {
@@ -222,5 +222,5 @@ func startDaemonBackground() error {
 		}
 	}
 
-	return fmt.Errorf("daemon did not start in time")
+	return fmt.Errorf("service did not start in time")
 }

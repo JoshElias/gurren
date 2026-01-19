@@ -1,6 +1,6 @@
 # Gurren
 
-A fast, terminal-based SSH tunnel manager with a TUI and background daemon.
+A fast, terminal-based SSH tunnel manager with a TUI and background service.
 
 <!-- TODO: Add screenshot/GIF here -->
 <!-- ![Gurren TUI](./assets/screenshot.png) -->
@@ -8,7 +8,8 @@ A fast, terminal-based SSH tunnel manager with a TUI and background daemon.
 ## Features
 
 - **Interactive TUI** — Manage all your tunnels from a single interface
-- **Background daemon** — Tunnels persist even after closing the TUI
+- **Background service** — Tunnels persist even after closing the TUI
+- **systemd integration** — Optional systemd user service for auto-start on login
 - **Vim-style navigation** — `j`/`k` to navigate, `Enter` to toggle
 - **Multiple auth methods** — SSH agent, public key, and password
 - **SSH config support** — Use hosts from `~/.ssh/config` directly
@@ -73,7 +74,7 @@ gurren
 gurren
 ```
 
-Launches the interactive terminal interface. The daemon starts automatically if not running.
+Launches the interactive terminal interface. The service starts automatically if not running.
 
 **Key bindings:**
 
@@ -95,15 +96,21 @@ gurren ls --json
 gurren connect my-database
 gurren disconnect my-database
 
-# Direct connection with flags (bypasses daemon)
+# Direct connection with flags (bypasses config)
 # --host accepts user@host:port or a Host from ~/.ssh/config
 gurren connect --host user@bastion:22 --remote db:5432 --local localhost:5432
 gurren connect --host my-ssh-host --remote db:5432 --local localhost:5432
 
-# Daemon management
-gurren daemon start    # Start daemon (foreground)
-gurren daemon stop     # Stop daemon and all tunnels
-gurren daemon status   # Check if daemon is running
+# Service management
+gurren service start    # Start service in background
+gurren service stop     # Stop service and all tunnels
+gurren service status   # Check if service is running
+
+# systemd integration (Linux only)
+gurren service install    # Install systemd user service
+gurren service uninstall  # Remove systemd user service
+gurren service enable     # Enable auto-start on login
+gurren service disable    # Disable auto-start
 
 # Shell completion
 gurren completion bash       # Bash completion script
@@ -145,6 +152,12 @@ name = "staging-db"
 host = "ec2-user@bastion-staging.example.com"
 remote = "db-staging.internal:3306"
 local = "127.0.0.1:3307"
+
+[[tunnels]]
+# name is optional - derived from host if omitted (becomes "bastion")
+host = "bastion"
+remote = "redis.internal:6379"
+local = "localhost:6379"
 ```
 
 ## Authentication
@@ -188,6 +201,46 @@ remote = "db.internal:5432"
 local = "localhost:5432"
 ```
 
+If you omit the `name` field, Gurren will automatically use the host value as the tunnel name (stripping the `user@` prefix if present). Duplicate names are auto-suffixed (e.g., `bastion`, `bastion-2`).
+
+## systemd Integration
+
+On Linux systems with systemd, you can install Gurren as a user service for automatic startup on login.
+
+### Install and Enable
+
+```bash
+# Install the systemd user service
+gurren service install
+
+# Enable auto-start on login
+gurren service enable
+
+# Start the service now (or just reboot/re-login)
+systemctl --user start gurren
+```
+
+### Manage with systemctl
+
+Once installed, you can also manage the service directly with systemctl:
+
+```bash
+# Check status
+systemctl --user status gurren
+
+# View logs
+journalctl --user -u gurren
+
+# Restart service
+systemctl --user restart gurren
+```
+
+### Uninstall
+
+```bash
+gurren service uninstall
+```
+
 ## Architecture
 
 ```
@@ -199,23 +252,24 @@ local = "localhost:5432"
          └───────────┬───────────┘
                      ▼
          ┌───────────────────────┐
-         │   Daemon              │
+         │   Service             │
          │   - Manages tunnels   │
          │   - Tracks state      │
          │   - Pushes updates    │
          └───────────────────────┘
 ```
 
-- **Daemon** runs in the background and manages SSH tunnel lifecycles
-- **TUI** and **CLI** are clients that communicate with the daemon via Unix socket
-- **Tunnels persist** after the TUI exits — the daemon keeps them running
-- **Status updates** are pushed from daemon to subscribed clients in real-time
+- **Service** runs in the background and manages SSH tunnel lifecycles
+- **TUI** and **CLI** are clients that communicate with the service via Unix socket
+- **Tunnels persist** after the TUI exits — the service keeps them running
+- **Status updates** are pushed from service to subscribed clients in real-time
 
 ## Roadmap
 
 - [ ] Homebrew formula
 - [x] AUR package
 - [x] SSH config file (`~/.ssh/config`) parsing
+- [x] systemd user service support
 - [ ] Host key verification
 - [ ] Test coverage
 
