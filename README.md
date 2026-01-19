@@ -36,7 +36,13 @@ Coming soon.
 
 ### AUR
 
-Coming soon.
+```bash
+# Stable release
+yay -S gurren
+
+# Development version (latest git)
+yay -S gurren-git
+```
 
 ## Quick Start
 
@@ -161,7 +167,7 @@ When `method = "auto"` (default), Gurren tries each method in priority order unt
 ## Roadmap
 
 - [ ] Homebrew formula
-- [ ] AUR package
+- [x] AUR package
 - [x] SSH config file (`~/.ssh/config`) parsing
 - [ ] Host key verification
 - [ ] Test coverage
