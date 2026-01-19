@@ -2,7 +2,8 @@
 
 A fast, terminal-based SSH tunnel manager with a TUI and background service.
 
-<img width="1029" height="609" alt="image" src="https://github.com/user-attachments/assets/c7b035c9-a1a8-4c0d-b346-2fc3d8b94656" />
+<img width="893" height="550" alt="image" src="https://github.com/user-attachments/assets/843c0e06-138b-4e59-ad60-c5be25d5a500" />
+
 
 ## Features
 
