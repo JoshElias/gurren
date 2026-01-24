@@ -20,13 +20,7 @@ func (a *AgentAuthenticator) Priority() int {
 }
 
 func (a *AgentAuthenticator) IsAvailable() bool {
-	socket := os.Getenv("SSH_AUTH_SOCK")
-	if socket == "" {
-		return false
-	}
-
-	// Try to connect to verify agent is running
-	conn, err := net.Dial("unix", socket)
+	conn, err := getSocketConn()
 	if err != nil {
 		return false
 	}
@@ -36,13 +30,16 @@ func (a *AgentAuthenticator) IsAvailable() bool {
 }
 
 func (a *AgentAuthenticator) GetAuthMethod() (ssh.AuthMethod, error) {
-	socket := os.Getenv("SSH_AUTH_SOCK")
-
-	conn, err := net.Dial("unix", socket)
+	conn, err := getSocketConn()
 	if err != nil {
 		return nil, err
 	}
 
 	agentClient := agent.NewClient(conn)
 	return ssh.PublicKeysCallback(agentClient.Signers), nil
+}
+
+func getSocketConn() (net.Conn, error) {
+	socket := os.Getenv("SSH_AUTH_SOCK")
+	return net.Dial("unix", socket)
 }
