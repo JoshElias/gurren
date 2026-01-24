@@ -9,6 +9,7 @@ import (
 )
 
 // PasswordAuthenticator provides SSH authentication via password.
+// TODO: Is storing a password in a config a good idea?
 type PasswordAuthenticator struct {
 	Password string // Optional: pre-configured password. If empty, prompts user.
 }
