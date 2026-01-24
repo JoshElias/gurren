@@ -2,8 +2,8 @@
 
 A fast, terminal-based SSH tunnel manager with a TUI and background service.
 
-<!-- TODO: Add screenshot/GIF here -->
-<!-- ![Gurren TUI](./assets/screenshot.png) -->
+<img width="893" height="550" alt="image" src="https://github.com/user-attachments/assets/843c0e06-138b-4e59-ad60-c5be25d5a500" />
+
 
 ## Features
 
